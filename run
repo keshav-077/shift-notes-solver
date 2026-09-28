@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Graded entrypoint: ./run <items.json> --budget <1x|3x|10x> --out <answers.json>
+set -euo pipefail
+cd "$(dirname "$0")"
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 run.py "$@"
+else
+  exec python run.py "$@"
+fi
