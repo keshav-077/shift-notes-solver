@@ -257,9 +257,7 @@ The solver never sees English. It sees typed tuples. A new sentence fails only i
 
 What is insensitive to wording, once the tuples are right: the 720-assignment search, the unique / ambiguous / inconsistent split, and the minimal-core citation. The few-shot teaches the eight relations with sentences written for this prompt (Alice through Eve, dispatch, which this set does not use). It does not copy the visible lines. If the header template changes, the regex fails over to the roster from the same call.
 
-What still depends on the model and the prompt: which construction counts as `adjacent` rather than `before`, which sentence is a wish rather than a fact, and the direction of “A then B”. Grounding only checks that the names occur on the line. It cannot see that the order was reversed. A vote among copies of one mistake stays wrong.
-
-A local set of 60 items, generated with different names, stations, and phrasings, was scored once at 1×. Macro exact match was **0.500** (unique 0.45, ambiguous 0.60, inconsistent 0.45). That set is not the evaluator’s private held-out set, and the visible-set numbers above do not measure it. The 3× and 10× files from that local run contain HTTP 402 credit errors, so they are not reported as model scores.
+What still depends on the model and the prompt: which construction counts as `adjacent` rather than `before`, which sentence is a wish rather than a fact, and the direction of “A then B”. Grounding only checks that the names occur on the line. It cannot see that the order was reversed. A vote among copies of one mistake stays wrong. That is what B2-002, B2-012, and B2-023 are on this set.
 
 A phrase list for “A then B” would raise the visible score by matching this template. It was not added.
 
@@ -280,7 +278,7 @@ The 10× plateau is the model agreeing with itself. More copies of the same read
 
 The concrete next step is a different question, asked only where every sample agrees and the gloss has swapped the two names: which of the two names, in the order written, is earlier. That targets B2-002, B2-012, and the same class of reversal, without another full-page vote and without a list of surface forms.
 
-Around that, the month would go to extraction on wording this prompt has not seen: the local 1× drop from about 0.81 to 0.500 is the measurement. A second full 10× run on the visible set is less informative than that, because the first one had already stopped on three agreed mistakes.
+A second full 10× run on this set is not the next experiment. The first one had already stopped by call 6, on the same three items as the 0.950 run at 3×.
 
 ## Running it
 
@@ -361,7 +359,7 @@ python ablate.py --items candidate_package/items.json \
 └── candidate_package/   # items, visible key, scorer, brief
 ```
 
-`runs/` and `holdout/` are local logs. They are gitignored.
+`runs/` holds the logs for the numbers above. It is gitignored.
 
 ## Reproducibility
 
