@@ -34,13 +34,13 @@ The solver never sees English, only typed tuples. The few-shot teaches the eight
 
 With a month I would not add a phrase list. On lines where every sample agrees and the gloss has swapped the two names, I would ask a different question: which of the two names, in the order written, is earlier. More copies of the same read are what the 10× plateau already showed do not help.
 
-Hedges keep their force. Wishes, refused requests, past arrangements and open questions do not: the model emits `none`. Treating them as negations pulls them into cores the key does not recognise. A timeout is counted as a call, because the proxy may have seen it; only a connection that never opened is retried for free. An HTTP 429 or 5xx spends a call and is retried only if budget remains, so 1× does not retry past its one call. Vote and repair cannot fire at 1×.
+Hedges keep their force. Wishes, refused requests, past arrangements and open questions do not: the model emits `none`. Treating them as negations would assert something about the current rota that those lines do not say. A timeout is counted as a call, because the proxy may have seen it; only a connection that never opened is retried for free. An HTTP 429 or 5xx spends a call and is retried only if budget remains, so 1× does not retry past its one call. Vote and repair cannot fire at 1×.
 
-Not done: a third 1× run and a second full 10× run. The 1× pair sits in a 0.017 band and the 3× pair in a 0.033 band. The 10× run had already stopped by call 6 on the first 3× run's three items, so a repeat of that policy was not the next experiment.
+Not done: a third 1× run and a second full 10× run. The 1× pair sits in a 0.017 band and the 3× pair in a 0.033 band. The 10× run had already stopped by call 6 on the first 3× run's three items, so a repeat of that policy was not the next experiment. A unit test in `tests/test_solver.py` feeds two different model replies for the same page and checks that the answers differ.
 
 ## Reference
 
-# Architecture Under a Fixed, Weak Model
+### Architecture under a fixed, weak model
 
 The model is `ibm-granite/granite-4.2-8b`. It translates each line of a shift-notes page into a typed constraint. A deterministic solver then enumerates the rota, decides whether the notes are unique, ambiguous, or inconsistent, and writes the exact JSON. The model is used where the work is reading a sentence. The code is used where the work is checking every legal assignment.
 
@@ -299,7 +299,7 @@ Spending all ten calls on more copies of the full page (0.917) did not beat four
 
 An earlier prompt, not in the table and not the submitted system, scored 0.833 at 1× on one run and called an inconsistent item unique. The submitted prompt is a little worse at 1× and cleaner on the case matrix, and it is what 3× and 10× use.
 
-`python ablate.py --items candidate_package/items.json --key candidate_package/visible_key.json --budgets 1x,3x,10x` re-runs the live arms and writes `ablation/ABLATION.md`. It does not replace the root `ABLATION.md`, which is the table above.
+`python ablate.py --items candidate_package/items.json --key candidate_package/visible_key.json --budgets 1x,3x,10x` re-runs the live arms and writes `ablation/ABLATION.md`. It does not replace the root `ABLATION.md`, which is the scored table. The runs column is in that file, not in the table in this README.
 
 ## Where it still breaks
 
