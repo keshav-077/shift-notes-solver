@@ -1,5 +1,47 @@
 # Architecture Under a Fixed, Weak Model
 
+## Writeup
+
+The model is `ibm-granite/granite-4.2-8b`, temperature 1.0, top_p 0.95, reasoning off. Two probes asked it for the finished JSON before any of this was built. One ran out of tokens in prose. The other emitted JSON with two people on one station and a station on someone the header left off a station. It can format. It does not search a rota.
+
+Asked only to label each numbered line, with a one-phrase restatement, one worked example and `json_object` output, it got about 95% of lines right and did not invent constraints out of filler. What it still got wrong was stable: a line dropped to `none`, an adjacency read backwards, a station name in a person slot, and "later than whoever has station S" given the wrong type. Extraction is therefore model-based. The case, the assignments and the minimal conflicting set are symbolic.
+
+Each line is one of eight relations: on or off a block, on or off a station, earlier than, on touching blocks, between two people, or earlier or later than whoever holds a named station. Anything else is `none`. The model returns a line number and strings from the header. Citations are the original lines, looked up by number.
+
+The solver enumerates every assignment the header allows. On this set that is five people, five blocks and three stations, so 5! × 3! = 720. No solution: the minimal conflicting set whose lines the samples agreed on most, then the smallest. One solution: `unique`. Two or more: `ambiguous`, every solution written out. A constraint the header already makes impossible is dropped when validation is on.
+
+Extra budget is more translations, not a request to make the page consistent. At 3×, two full-page reads, then one read of only the lines still in dispute. At 10×, four full-page reads and up to six of those short reads. The short read is another vote. A tie drops the line, which under-constrains the rota and tends to come out `ambiguous`.
+
+The gloss is that restatement, before the type, in the same call. The few-shot is one page I wrote (Alice through Eve, a station called dispatch that this set does not use). It does not copy the visible lines. `json_object`, with a parser that keeps finished objects from a cut-off reply, is there because an array-only prompt once collapsed into comments. Validation requires every name in a constraint to occur on that line, and substitutes when the line names exactly one and the model named another. Deduping collapses two copies of the same sentence under a lead-in that names nobody.
+
+A regex over the visible phrasing, plus this solver, scores 1.0. `run` does not import it. The solver and the citation format are enough when the translation is perfect, so the score is extraction error.
+
+Macro exact match. Two 1× runs of this prompt: 0.817 and 0.800. Two 3× runs: 0.950 and 0.917. One 10× run: 0.950, the same three misses as the first 3× run, and it stopped at 5 or 6 calls. On the 1× logs, 1116/1137 and 1115/1137 body lines matched the phrasing checker in `tests/oracle.py`. That checker is not the answer key, and the count is not the score. It is also later than the labelling probe above, which was about 95% of lines before this checker. On the 0.950 runs the case matrix is diagonal: the unique miss has two blocks swapped, and the inconsistent misses cite a non-minimal set. `inconsistent_label_only` 0.10 is the fraction of inconsistent items where the kind was right and the citation was not. The second 3× run adds two unique items, one called inconsistent and one called ambiguous. At 1× the off-diagonal misses are unique items called ambiguous. An end-to-end baseline scores 0.000 at 1×, 3× and 10×, one run each.
+
+1× run 1 was an earlier prompt, not the submitted system. It scored 0.833 and called an inconsistent item unique. This prompt is a little worse at 1×, cleaner on the case matrix, and is what 3× and 10× use. `holder_before` / `holder_after` were dropped after the model wrote a correct gloss and the opposite label. It now emits `holder_order` with `person_is`, and the gloss wins when they disagree. Letting an isolated re-read outvote the page was not shipped: on the disagreements in the 10× log the page was right 23 times and the re-read 8, usually by the re-read dropping a real constraint.
+
+Gloss off scored 0.683 at 1× and 0.733 at 3×. Few-shot off scored 0.533 and 0.633. Those two carry the system; the rest of the table is in `ABLATION.md`. Ten page-votes and no isolated read scored 0.917 and kept both bad cores. One page-read plus isolated reads, cap 10, stopped by call 4 and scored 0.933: those cores disappeared, and a real inconsistency was called unique. Deduping changed nothing. `json_object` off scored as high or higher (0.867, 0.933) and stays, because it was added for replies that do not parse.
+
+The three errors that voting does not fix are the model agreeing with itself:
+
+- B2-002. "Nadia then Priya, back to back" was glossed as "Priya then Nadia" on 3 of 4 reads, and the fields followed. The answer is unique and swaps those two blocks.
+- B2-012. "Nadia hands straight over to Priya" was read backwards on 4 of 4 page reads. The one isolated read got it right and lost the vote. The solver then cites a conflict of size 2. Every real core here has at least 3 lines.
+- B2-023. The middle of a between-line was swapped on the page and corrected once in isolation, again outvoted. The citation has 6 lines.
+
+The 10× run stops when the samples agree. They agree on the wrong direction. A phrase list for "A then B" was not added. It would be symbolic extraction tuned to this template.
+
+The solver never sees English, only typed tuples. The few-shot teaches the eight relations with sentences I wrote, and the header regex falls back to the model's roster from the same call, so a changed header template does not cost a second call. What will not survive is a construction this model misreads the way it misreads "A then B". Grounding only checks that the names occur on the line, and a vote among copies of one mistake stays wrong. A new idiom fails item by item, not because the solver is fitted to this generator.
+
+With a month I would not add a phrase list. On lines where every sample agrees and the gloss has swapped the two names, I would ask a different question: which of the two names, in the order written, is earlier. More copies of the same read are what the 10× plateau already showed do not help.
+
+Hedges keep their force. Wishes, refused requests, past arrangements and open questions do not: the model emits `none`. Treating them as negations pulls them into cores the key does not recognise. A timeout is counted as a call, because the proxy may have seen it; only a connection that never opened is retried for free. An HTTP 429 or 5xx spends a call and is retried only if budget remains, so 1× does not retry past its one call. Vote and repair cannot fire at 1×.
+
+Not done: a third 1× run and a second full 10× run. The 1× pair sits in a 0.017 band and the 3× pair in a 0.033 band. The 10× run had already stopped by call 6 on the first 3× run's three items, so a repeat of that policy was not the next experiment.
+
+## Reference
+
+# Architecture Under a Fixed, Weak Model
+
 The model is `ibm-granite/granite-4.2-8b`. It translates each line of a shift-notes page into a typed constraint. A deterministic solver then enumerates the rota, decides whether the notes are unique, ambiguous, or inconsistent, and writes the exact JSON. The model is used where the work is reading a sentence. The code is used where the work is checking every legal assignment.
 
 > **Visible-set result:** macro exact match **0.817** and **0.800** at 1× (two runs), against **0.000** for a naive baseline that asks the same model to emit the finished JSON (one run at each budget). At 3× the full system scored **0.950** and **0.917**. The one 10× run scored **0.950** and had already stopped by call 6.
@@ -44,13 +86,13 @@ The scored baseline is the same idea, with the required sampling settings:
 | 3× | up to 3, voted | 0.000 |
 | 10× | 10 per item, voted | 0.000 |
 
-One run each. Some items were declared inconsistent (`inconsistent_label_only` 0.20 at 1×, 0.10 at 3× and 10×), and the citations still failed the minimal-conflict rule, so the exact-match rate stayed zero. Extra samples of a wrong rota do not become a search.
+One run each. Some items were declared inconsistent (`inconsistent_label_only` 0.20 at 1× and 0.10 at 3× and 10×, each a fraction of the inconsistent items), and the citations still failed the minimal-conflict rule, so the exact-match rate stayed zero. Extra samples of a wrong rota do not become a search.
 
 ## Model characterisation
 
 The design followed a narrower probe: label each numbered line, with a one-phrase restatement, one worked example, and `json_object` output. The model got about 95% of lines right and did not invent constraints out of filler. The errors that remained were stable.
 
-The submitted 1× logs, after the prompt and the checker, are tighter: **1116/1137** and **1115/1137** lines matched a dev oracle. Item-level exact match is much lower, because one wrong line changes the rota or the citation.
+The submitted 1× logs, after the prompt and the checker, are tighter: **1116/1137** and **1115/1137** body lines matched the phrasing checker in `tests/oracle.py`, which is fitted to the visible wording and is not the answer key. The about 95% figure above is the earlier labelling probe, before that checker. Neither number is the item score. Item-level exact match is much lower, because one wrong line changes the rota or the citation.
 
 | Observed weakness | Evidence | Architectural response |
 | --- | --- | --- |
@@ -71,7 +113,7 @@ flowchart TD
     check["Turn the reply into typed constraints<br/>drop names the line never uses, then vote"]
     repair{"Is a line still uncertain,<br/>and is there a call left?"}
     again["Translate only those lines again<br/>another vote, not a request to remove the conflict"]
-    search["Test all 720 legal rotas<br/>five people on five blocks, three holders on three stations"]
+    search["Test every rota the header allows<br/>on this set, five people, five blocks, three stations"]
     one["Exactly one rota fits<br/>return that assignment"]
     many["Several rotas fit<br/>return every one of them"]
     none["No rota fits<br/>quote one minimal set of the original lines"]
@@ -92,9 +134,7 @@ flowchart TD
     search --> none
 ```
 
-The file names for these steps are in the table below. The animation plays the same path on a made-up page: the prompt's Alice through Eve, not an item from the scored set. The assignment in the last frame is what the solver returns for those constraints.
-
-![One page moving from the notes to a unique assignment](docs/architecture-walkthrough.gif)
+The file names for these steps are in the table below.
 
 | Component | Role | Why it exists |
 | --- | --- | --- |
@@ -127,7 +167,7 @@ Anything that does not constrain the current rota is `none`: chatter, a wish, a 
 - Validation coerces names onto header strings and drops a constraint the header already makes impossible.
 - Grounding requires every name in a constraint to occur on that line. If the line names exactly one person, block, or station and the model named another, the line’s entity is substituted. Anything else is discarded, which under-constrains the rota.
 - Votes are counted per line. A tie drops the line. Duplicate sentences under a lead-in that names nobody are pooled.
-- The solver enumerates the bijection of five people to five blocks and three station-holders to three stations: 5! × 3! = 720. No solution: the minimal conflicting set whose lines the samples agreed on most, then the smallest. One solution: `unique`. Two or more: `ambiguous`, every solution written out. Citations are the original lines, looked up by number.
+- The solver permutes the blocks and stations named in that item's header. On this set the header gives five people, five blocks and three stations, so the search is 5! × 3! = 720. No solution: the minimal conflicting set whose lines the samples agreed on most, then the smallest. One solution: `unique`. Two or more: `ambiguous`, every solution written out. Citations are the original lines, looked up by number.
 
 ## Why this split helps
 
@@ -139,7 +179,7 @@ A repair call is another translation of lines that are still uncertain: a disagr
 
 ## End-to-end example
 
-The animation is this example. Six of the seven lines become constraints. “Bob and Carla both complained about the coffee” is `none` and never reaches the solver. The hedge on “Speaking from memory, Carla holds intake” is dropped, and the fact is kept. The solver then finds one rota:
+Six of the seven lines in the worked example become constraints. “Bob and Carla both complained about the coffee” is `none` and never reaches the solver. The hedge on “Speaking from memory, Carla holds intake” is dropped, and the fact is kept. The solver then finds one rota:
 
 ```json
 {
@@ -184,14 +224,41 @@ Per-kind exact match for the full system:
 | 3× | 0.95, 0.85 | 1.00, 1.00 | 0.90, 0.90 |
 | 10× | 0.95 | 1.00 | 0.90 |
 
-Declared kind against true kind, as unique / ambiguous / inconsistent. Rows are the true kind.
+Declared kind against true kind. Rows are the true kind. Columns are the kind the system declared. 1× run 1 was an earlier prompt, not the submitted system. It scored 0.833 and called an inconsistent item unique, so these grids start at run 2.
 
-- 1× run 2: unique 17/3/0, ambiguous 0/20/0, inconsistent 0/0/20
-- 1× run 3: unique 18/1/1, ambiguous 0/19/1, inconsistent 0/1/19
-- 3× run 1 and the 10× run: unique 20/0/0, ambiguous 0/20/0, inconsistent 0/0/20
-- 3× run 2: unique 18/1/1, ambiguous 0/20/0, inconsistent 0/0/20
+1× run 2 (macro 0.817):
 
-On the 0.950 runs the matrix is diagonal, and the items are still not all exact. The unique miss has two blocks swapped. The inconsistent misses cite a non-minimal set (`inconsistent_label_only` 0.10, `ambiguous_partial` 1.0). At 1×, `inconsistent_label_only` is 0.25 and 0.20: the kind is often right and the citation is not. The second 3× run adds two unique items, one called inconsistent and one called ambiguous.
+| True kind | Unique | Ambiguous | Inconsistent |
+| --- | ---: | ---: | ---: |
+| Unique | 17 | 3 | 0 |
+| Ambiguous | 0 | 20 | 0 |
+| Inconsistent | 0 | 0 | 20 |
+
+1× run 3 (macro 0.800):
+
+| True kind | Unique | Ambiguous | Inconsistent |
+| --- | ---: | ---: | ---: |
+| Unique | 18 | 1 | 1 |
+| Ambiguous | 0 | 19 | 1 |
+| Inconsistent | 0 | 1 | 19 |
+
+3× run 1 and the 10× run (macro 0.950):
+
+| True kind | Unique | Ambiguous | Inconsistent |
+| --- | ---: | ---: | ---: |
+| Unique | 20 | 0 | 0 |
+| Ambiguous | 0 | 20 | 0 |
+| Inconsistent | 0 | 0 | 20 |
+
+3× run 2 (macro 0.917):
+
+| True kind | Unique | Ambiguous | Inconsistent |
+| --- | ---: | ---: | ---: |
+| Unique | 18 | 1 | 1 |
+| Ambiguous | 0 | 20 | 0 |
+| Inconsistent | 0 | 0 | 20 |
+
+On the 0.950 runs the matrix is diagonal, and the items are still not all exact. The unique miss has two blocks swapped. The inconsistent misses cite a non-minimal set. `inconsistent_label_only` 0.10 on those runs, and 0.25 and 0.20 at 1×, is the fraction of inconsistent items where the kind was right and the citation was not. The second 3× run adds two unique items, one called inconsistent and one called ambiguous.
 
 The curve is the point. Almost all of the gain over a single call arrives by 3×. The 10× policy spends the extra calls only while a line is still uncertain, and on this set it stopped on the same three misses. Agreement is not correctness when every sample shares the mistake.
 
@@ -255,7 +322,7 @@ Voting fixes a line the samples disagree on. It does not fix a line they all rea
 
 The solver never sees English. It sees typed tuples. A new sentence fails only if the translation fails, and it fails item by item.
 
-What is insensitive to wording, once the tuples are right: the 720-assignment search, the unique / ambiguous / inconsistent split, and the minimal-core citation. The few-shot teaches the eight relations with sentences written for this prompt (Alice through Eve, dispatch, which this set does not use). It does not copy the visible lines. If the header template changes, the regex fails over to the roster from the same call.
+What is insensitive to wording, once the tuples are right: the search over the header's own blocks and stations, the unique / ambiguous / inconsistent split, and the minimal-core citation. The few-shot teaches the eight relations with sentences written for this prompt (Alice through Eve, dispatch, which this set does not use). It does not copy the visible lines. If the header template changes, the regex fails over to the roster from the same call.
 
 What still depends on the model and the prompt: which construction counts as `adjacent` rather than `before`, which sentence is a wish rather than a fact, and the direction of “A then B”. Grounding only checks that the names occur on the line. It cannot see that the order was reversed. A vote among copies of one mistake stays wrong. That is what B2-002, B2-012, and B2-023 are on this set.
 
@@ -338,10 +405,8 @@ python ablate.py --items candidate_package/items.json \
 ├── requirements.txt
 ├── ablate.py
 ├── ABLATION.md          # scored ablation table
-├── WRITEUP.md           # original essay, left as written
-├── README.md
-├── docs/
-│   └── architecture-walkthrough.gif
+├── README.md            # graded writeup, then the longer reference
+├── WRITEUP.md           # earlier copy of the writeup; README is the graded one
 ├── wsolver/
 │   ├── client.py
 │   ├── prompt.py
@@ -376,4 +441,4 @@ python ablate.py --items candidate_package/items.json \
 
 Sampling is on, so a repeat will move. The two 1× runs sit 0.017 apart and the two 3× runs sit 0.033 apart. Report the run count with any new number. The figures in this file are the runs in `ABLATION.md`: two full runs at 1×, two at 3×, one at 10×, and one run for each live ablation arm.
 
-A timeout counts as a call, because the proxy may have seen it, and it is retried only while budget remains. A connection that never opened is retried without spending a call, up to two times. An HTTP 429 or 5xx spends a call and is retried only if budget remains, so 1× does not retry past its one call.
+A timeout counts as a call, because the proxy may have seen it, and it is retried only while budget remains. A connection that never opened is retried without spending a call, up to two times. An HTTP 429 or 5xx spends a call and is retried only if budget remains, so 1× does not retry past its one call. If that one call errors and the header still parses, the solver has no constraints and returns every legal rota as ambiguous. It does not invent a unique assignment.
