@@ -63,20 +63,38 @@ The submitted 1× logs, after the prompt and the checker, are tighter: **1116/11
 
 ```mermaid
 flowchart TD
-    notes[Shift notes] --> split[Split header and numbered lines]
-    split --> header[header.py regex roster]
-    split --> prompt[prompt.py translate each line]
-    header --> client[client.py Granite 4.2 8B]
-    prompt --> client
-    client --> extract[extract.py parse, ground, vote]
-    header --> extract
-    extract --> repair{Budget left and a line still uncertain}
-    repair -->|short re-read| client
-    repair -->|enough agreement, or cap reached| solver[solver.py 720 assignments]
-    solver --> unique[unique]
-    solver --> ambiguous[ambiguous: every solution]
-    solver --> inconsistent[inconsistent: one minimal core]
+    notes["A page of shift notes arrives<br/>a roster sentence, then hedged lines"]
+    split["Separate the roster from the notes<br/>and number every remaining line"]
+    roster["Read the roster in code<br/>staff, blocks, stations, and who holds one"]
+    ask["Prepare one translation per line<br/>a short restatement, then one relation"]
+    model["Granite 4.2 8B reads each line<br/>it returns constraints, not a finished rota"]
+    check["Turn the reply into typed constraints<br/>drop names the line never uses, then vote"]
+    repair{"Is a line still uncertain,<br/>and is there a call left?"}
+    again["Translate only those lines again<br/>another vote, not a request to remove the conflict"]
+    search["Test all 720 legal rotas<br/>five people on five blocks, three holders on three stations"]
+    one["Exactly one rota fits<br/>return that assignment"]
+    many["Several rotas fit<br/>return every one of them"]
+    none["No rota fits<br/>quote one minimal set of the original lines"]
+
+    notes --> split
+    split --> roster
+    split --> ask
+    roster --> model
+    ask --> model
+    model --> check
+    roster --> check
+    check --> repair
+    repair -->|yes| again
+    again --> model
+    repair -->|agreed, or the budget is used| search
+    search --> one
+    search --> many
+    search --> none
 ```
+
+The file names for these steps are in the table below. The animation plays the same path on a made-up page: the prompt's Alice through Eve, not an item from the scored set. The assignment in the last frame is what the solver returns for those constraints.
+
+![One page moving from the notes to a unique assignment](docs/architecture-walkthrough.gif)
 
 | Component | Role | Why it exists |
 | --- | --- | --- |
@@ -121,23 +139,24 @@ A repair call is another translation of lines that are still uncertain: a disagr
 
 ## End-to-end example
 
-This is a line from the prompt’s worked page (Alice through Eve, a station called dispatch). That page is not an item in the set.
+The animation is this example. Six of the seven lines become constraints. “Bob and Carla both complained about the coffee” is `none` and never reaches the solver. The hedge on “Speaking from memory, Carla holds intake” is dropped, and the fact is kept. The solver then finds one rota:
 
-```text
-"Alice then Eve, back to back."
-        ↓
-gloss: "Eve's block is immediately after Alice's"
-        ↓
-{"type": "adjacent", "earlier": "Alice", "later": "Eve"}
-        ↓
-grounding: both names occur on the line
-        ↓
-solver: Eve's block is the next one after Alice's, inside the 720 candidates
-        ↓
-one surviving assignment → {"case": "unique", "assignment": {...}}
+```json
+{
+  "case": "unique",
+  "assignment": {
+    "Alice": {"block": "08:00", "station": "packing"},
+    "Bob": {"block": "12:00"},
+    "Carla": {"block": "14:00", "station": "intake"},
+    "Dev": {"block": "16:00"},
+    "Eve": {"block": "10:00", "station": "dispatch"}
+  }
+}
 ```
 
-If several assignments survive, the case is `ambiguous` and every one is written out. If none survive, the case is `inconsistent` and the conflicts are the original lines of one minimal core. A line such as “Bob and Carla both complained about the coffee” is `none` and never enters the solver.
+No line says that Alice holds packing. She is the remaining station-holder once Carla has intake and Eve has dispatch, so the search fills it in. Bob and Dev are named, and they have no station, because the header left them off one.
+
+If several rotas had survived, every one would be returned. If none had, the answer would quote one minimal set of the original lines.
 
 ## Budget: 1×, 3×, 10×
 
@@ -323,6 +342,8 @@ python ablate.py --items candidate_package/items.json \
 ├── ABLATION.md          # scored ablation table
 ├── WRITEUP.md           # original essay, left as written
 ├── README.md
+├── docs/
+│   └── architecture-walkthrough.gif
 ├── wsolver/
 │   ├── client.py
 │   ├── prompt.py
